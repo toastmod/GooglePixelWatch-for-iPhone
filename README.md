@@ -1,5 +1,5 @@
 # Proof-Of-Concept ANCS Client for Google Pixel Watch
-The fact that this works at all it pretty cool and saves me about $100
+The fact that this works at all is pretty cool and saves me about $100
 
 ## Setup
 - You'll need a Pixel Watch that is already activated by an Android device. If you don't have one, you can use an Android Emulator and [Google's Bumble](https://google.github.io/bumble/platforms/android.html) (please star this repo if you'd like me to make a tutorial!)
