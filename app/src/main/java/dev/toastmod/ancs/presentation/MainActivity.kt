@@ -1,43 +1,35 @@
-/* While this template provides a good starting point for using Wear Compose, you can always
- * take a look at https://github.com/android/wear-os-samples/tree/main/ComposeStarter to find the
- * most up to date changes to the libraries and their usages.
- */
-
 package dev.toastmod.ancs.presentation
 
 import android.Manifest
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.bluetooth.BluetoothDevice
 import android.bluetooth.BluetoothManager
 import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Bundle
 import android.os.PowerManager
 import android.os.VibratorManager
+import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.annotation.RequiresPermission
-import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.collectAsState
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.res.stringResource
 import androidx.core.app.ActivityCompat
-import androidx.wear.compose.foundation.lazy.TransformingLazyColumn
-import androidx.wear.compose.foundation.lazy.rememberTransformingLazyColumnState
 import androidx.wear.compose.material3.AppScaffold
-import androidx.wear.compose.material3.ListHeader
 import androidx.wear.compose.material3.ScreenScaffold
-import androidx.wear.compose.material3.SurfaceTransformation
-import androidx.wear.compose.material3.Text
-import androidx.wear.compose.material3.lazy.rememberTransformationSpec
-import androidx.wear.compose.material3.lazy.transformedHeight
 import androidx.wear.compose.ui.tooling.preview.WearPreviewDevices
 import androidx.wear.compose.ui.tooling.preview.WearPreviewFontScales
-import dev.toastmod.ancs.R
 import dev.toastmod.ancs.presentation.theme.ANCSTheme
-import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.flow.StateFlow
 import java.util.UUID
-import kotlin.coroutines.coroutineContext
 
 val ANCS_SERVICE: UUID = UUID.fromString("7905F431-B5CE-4E99-A40F-4B1E122D00D0")
 val ANCS_NOTIFICAITON_SOURCE: UUID = UUID.fromString("9FBF120D-6301-42D9-8C58-25E699A21DBD")
@@ -55,7 +47,7 @@ enum class EventID(val b: Byte) {
         private val map = entries.associateBy(key)
         fun fromByte(b: Byte): EventID {
             val bb = map[b]
-            if(bb != null) {
+            if (bb != null) {
                 return bb
             } else {
                 return RESERVED
@@ -84,7 +76,7 @@ enum class CategoryID(val b: Byte) {
         private val map = entries.associateBy(key)
         fun fromByte(b: Byte): CategoryID {
             val bb = map[b]
-            if(bb != null) {
+            if (bb != null) {
                 return bb
             } else {
                 return RESERVED
@@ -106,7 +98,7 @@ enum class EventFlag(val b: Byte) {
         private val map = entries.associateBy(key)
         fun fromByte(b: Byte): EventFlag {
             val bb = map[b]
-            if(bb != null) {
+            if (bb != null) {
                 return bb
             } else {
                 return RESERVED
@@ -126,7 +118,7 @@ enum class CommandID(val b: Byte) {
         private val map = entries.associateBy(key)
         fun fromByte(b: Byte): CommandID {
             val bb = map[b]
-            if(bb != null) {
+            if (bb != null) {
                 return bb
             } else {
                 return RESERVED
@@ -151,7 +143,7 @@ enum class NotificationAttributeID(val b: Byte) {
         private val map = entries.associateBy(key)
         fun fromByte(b: Byte): NotificationAttributeID {
             val bb = map[b]
-            if(bb != null) {
+            if (bb != null) {
                 return bb
             } else {
                 return RESERVED
@@ -169,7 +161,7 @@ enum class ActionID(val b: Byte) {
         private val map = entries.associateBy(key)
         fun fromByte(b: Byte): ActionID {
             val bb = map[b]
-            if(bb != null) {
+            if (bb != null) {
                 return bb
             } else {
                 return RESERVED
@@ -187,7 +179,7 @@ enum class AppAttributeID(val b: Byte) {
         private val map = entries.associateBy(key)
         fun fromByte(b: Byte): AppAttributeID {
             val bb = map[b]
-            if(bb != null) {
+            if (bb != null) {
                 return bb
             } else {
                 return RESERVED
@@ -200,15 +192,14 @@ val NOTIF_CHANNEL_ID = "com.apple.ancs"
 var wakelock: PowerManager.WakeLock? = null
 
 class MainActivity : ComponentActivity() {
+    private val amsClient = AMSClient()
+    private var gattClient: ANCSGattServiceClient? = null
 
     @RequiresPermission(allOf = [Manifest.permission.VIBRATE, Manifest.permission.BLUETOOTH_CONNECT, Manifest.permission.POST_NOTIFICATIONS])
     fun startBle() {
-
-        // Get instance of Vibrator
         val vibmgr = getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as VibratorManager
         val vibrator = vibmgr.defaultVibrator
 
-        // Create notification channel
         val name = "ANCS"
         val descText = "Apple Notification Center Service"
         val importance = NotificationManager.IMPORTANCE_DEFAULT
@@ -220,9 +211,24 @@ class MainActivity : ComponentActivity() {
 
         val btManager = baseContext.getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager
         val btAdapter = btManager.adapter
-        btAdapter.bondedDevices.forEach {
-            val gatt = it.connectGatt(baseContext, false, ANCSGattServiceClient(baseContext, channel, vibrator))
+        val targetDevice = selectTargetDevice(btAdapter.bondedDevices.toList())
+        if (targetDevice == null) {
+            Log.e("ANCSDiscover", "No bonded Bluetooth device found for ANCS/AMS")
+            return
         }
+        Log.i("ANCSDiscover", "Connecting to target device: ${targetDevice.alias ?: targetDevice.name ?: targetDevice.address}")
+        val callback = ANCSGattServiceClient(baseContext, channel, vibrator, amsClient)
+        gattClient = callback
+        targetDevice.connectGatt(baseContext, false, callback)
+    }
+
+    private fun selectTargetDevice(devices: List<BluetoothDevice>): BluetoothDevice? {
+        if (devices.isEmpty()) return null
+        val iphone = devices.firstOrNull { device ->
+            val label = "${device.alias ?: ""} ${device.name ?: ""}"
+            label.contains("iphone", ignoreCase = true)
+        }
+        return iphone ?: devices.first()
     }
 
     @RequiresPermission(allOf = [Manifest.permission.VIBRATE, Manifest.permission.BLUETOOTH_CONNECT, Manifest.permission.POST_NOTIFICATIONS])
@@ -232,7 +238,7 @@ class MainActivity : ComponentActivity() {
         grantResults: IntArray,
         deviceId: Int
     ) {
-        if(requestCode == 9001 && grantResults.all { it == PackageManager.PERMISSION_GRANTED }) {
+        if (requestCode == 9001 && grantResults.all { it == PackageManager.PERMISSION_GRANTED }) {
             startBle()
         }
     }
@@ -240,45 +246,48 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
-            WearApp("Android")
+            WearApp(
+                amsState = amsClient.state,
+                onTogglePlayPause = { gattClient?.sendAMSCommand(AMSCommand.TOGGLE_PLAY_PAUSE) },
+                onNextTrack = { gattClient?.sendAMSCommand(AMSCommand.NEXT_TRACK) },
+                onPreviousTrack = { gattClient?.sendAMSCommand(AMSCommand.PREVIOUS_TRACK) }
+            )
         }
 
-        // Start BLE
-        if (ActivityCompat.checkSelfPermission(
-                this,
-                Manifest.permission.BLUETOOTH_CONNECT
-            ) != PackageManager.PERMISSION_GRANTED || ActivityCompat.checkSelfPermission(
-                this,
-                Manifest.permission.POST_NOTIFICATIONS
-            ) != PackageManager.PERMISSION_GRANTED
+        if (
+            ActivityCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED ||
+            ActivityCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
         ) {
             requestPermissions(arrayOf(Manifest.permission.BLUETOOTH_CONNECT, Manifest.permission.POST_NOTIFICATIONS), 9001)
             return
         }
         startBle()
-
     }
 }
 
 @Composable
-fun WearApp(greetingName: String) {
+fun WearApp(
+    amsState: StateFlow<AMSState>,
+    onTogglePlayPause: () -> Unit,
+    onNextTrack: () -> Unit,
+    onPreviousTrack: () -> Unit
+) {
+    val state by amsState.collectAsState()
     ANCSTheme {
         AppScaffold {
-            val listState = rememberTransformingLazyColumnState()
-            val transformationSpec = rememberTransformationSpec()
-            ScreenScaffold(
-                scrollState = listState,
-            ) { contentPadding -> // ScreenScaffold provides default padding; adjust as needed
-                TransformingLazyColumn(contentPadding = contentPadding, state = listState) {
-                    item {
-                        ListHeader(
-                            modifier =
-                                Modifier.fillMaxWidth().transformedHeight(this, transformationSpec),
-                            transformation = SurfaceTransformation(transformationSpec),
-                        ) {
-                            Text(text = stringResource(R.string.hello_world, greetingName))
-                        }
-                    }
+            ScreenScaffold { contentPadding ->
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(contentPadding),
+                    contentAlignment = Alignment.Center
+                ) {
+                    NowPlayingScreen(
+                        state = state,
+                        onTogglePlayPause = onTogglePlayPause,
+                        onNextTrack = onNextTrack,
+                        onPreviousTrack = onPreviousTrack
+                    )
                 }
             }
         }
@@ -289,5 +298,16 @@ fun WearApp(greetingName: String) {
 @WearPreviewFontScales
 @Composable
 fun DefaultPreview() {
-    WearApp("Preview Android")
+    WearApp(
+        amsState = kotlinx.coroutines.flow.MutableStateFlow(
+            AMSState(
+                available = true,
+                track = AMSTrackInfo(title = "Track Title", artist = "Artist", album = "Album", duration = 230f),
+                player = AMSPlayerInfo(isPlaying = true, elapsedTime = 42f, playbackRate = 1f)
+            )
+        ),
+        onTogglePlayPause = {},
+        onNextTrack = {},
+        onPreviousTrack = {}
+    )
 }
