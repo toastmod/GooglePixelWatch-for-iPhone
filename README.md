@@ -7,9 +7,7 @@ and **AMS** (Apple Media Service) protocols. The Pixel Watch has no official
 iPhone support — this exists because a $400 smartwatch bricking itself the
 moment you leave the Android ecosystem is silly.
 
-This is a fork of [toastmod/GooglePixelWatch-for-iPhone](https://github.com/toastmod/GooglePixelWatch-for-iPhone)
-that adds a full Now Playing media control screen on top of the original
-notification-mirroring proof of concept.
+Huge thanks to [loud-at-heart](https://github.com/loud-at-heart) for the AMS implementation!
 
 > **Tested on: Google Pixel Watch 2.** All BLE/ANCS/AMS behavior described
 > below (including the workarounds for iOS-side quirks) was verified against
