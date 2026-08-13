@@ -28,9 +28,14 @@ class ANCSNotification(val channel: NotificationChannel, val androidNotifHandle:
 
 
     @RequiresPermission(Manifest.permission.POST_NOTIFICATIONS)
-    fun loadNotificationAttributes(context: Context, attributes: ByteArray) {
+    fun loadNotificationAttributes(context: Context, attributes: ByteArray): Boolean {
         var idx = 0
         while (idx < attributes.size) {
+            // Need at least 3 bytes for attribute header (id + 2-byte length)
+            if (idx + 3 > attributes.size) {
+                Log.i("ANCS", "Fragment: header truncated at idx=$idx")
+                return false
+            }
             // Parse
             val attr = NotificationAttributeID.fromByte(attributes[idx])
             val attrLen = ByteBuffer.wrap(byteArrayOf(attributes[idx+1],attributes[idx+2]))
@@ -38,13 +43,14 @@ class ANCSNotification(val channel: NotificationChannel, val androidNotifHandle:
                 .getShort()
                 .toUShort()
                 .toInt()
-            Log.i("ANCS","Attrlen: $attrLen | Datasize: ${attributes.size}")
-            if (attrLen > attributes.size) {
-                // TODO: Fragment is spliced
-                break
+            Log.i("ANCS","Attrlen: $attrLen | Datasize: ${attributes.size} | idx: $idx")
+            if (idx + 3 + attrLen > attributes.size) {
+                // Data for this attribute is truncated — wait for more fragments
+                Log.i("ANCS", "Fragment: data truncated for attr ${attr.name}")
+                return false
             }
             val attrData = attributes.slice(idx+3 until idx+3+attrLen).toByteArray().decodeToString()
-            Log.i("ANCS", "${attributes[idx]}(${attr.toString()}):  ${attrData}")
+            Log.i("ANCS", "${attributes[idx]}(${attr}):  ${attrData}")
             // Apply
             when(attr) {
                 NotificationAttributeID.AppIdentifier -> appIdent = attrData
@@ -60,9 +66,8 @@ class ANCSNotification(val channel: NotificationChannel, val androidNotifHandle:
         }
 
         Log.i("ANCS", "Loaded Notification \n$appIdent\n\t$title ; $subtitle\n\t$message")
-
         spawnAndroidNotif(context, channel)
-
+        return true
     }
 
     @RequiresPermission(Manifest.permission.POST_NOTIFICATIONS)

@@ -87,19 +87,21 @@ class ANCSClient(
         commandID: CommandID,
         notificationUuid: ByteArray,
         attributes: ByteArray
-    ) {
+    ): Boolean {
         val notification = notifications[Base64.encode(notificationUuid)]
-        when(commandID) {
+        return when(commandID) {
             CommandID.GetNotificationAttributes -> {
                 Log.i("ANCS", "GetNotificationAttributes")
-                notification?.loadNotificationAttributes(context, attributes) ?: Log.i("ANCS", "Notification $notificationUuid does not exist!")
+                notification?.loadNotificationAttributes(context, attributes)
+                    ?: run { Log.i("ANCS", "Notification $notificationUuid does not exist!"); false }
             }
 
             CommandID.GetAppAttributes -> {
                 Log.i("ANCS", "GetAppAttributes")
+                true
             }
 
-            else -> {}
+            else -> true
         }
     }
 
