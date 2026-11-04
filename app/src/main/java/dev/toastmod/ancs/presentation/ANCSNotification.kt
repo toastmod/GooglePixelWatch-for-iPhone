@@ -66,12 +66,12 @@ class ANCSNotification(val channel: NotificationChannel, val androidNotifHandle:
         }
 
         Log.i("ANCS", "Loaded Notification \n$appIdent\n\t$title ; $subtitle\n\t$message")
-        spawnAndroidNotif(context, channel)
+
         return true
     }
 
     @RequiresPermission(Manifest.permission.POST_NOTIFICATIONS)
-    fun spawnAndroidNotif(context: Context, channel: NotificationChannel) {
+    fun spawnAndroidNotif(context: Context) {
         androidNotif = NotificationCompat.Builder(context, channel.id)
             .setSmallIcon(R.drawable.ic_launcher_foreground)
             .setContentTitle(title)

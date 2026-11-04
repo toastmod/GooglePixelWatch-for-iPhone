@@ -8,7 +8,9 @@ import android.content.Context
 import android.os.Vibrator
 import android.util.Log
 import androidx.annotation.RequiresPermission
+import java.util.UUID
 import kotlin.io.encoding.Base64
+import kotlin.uuid.Uuid
 
 class ANCSClient(
     val context: Context,
@@ -20,6 +22,7 @@ class ANCSClient(
 
     val androidToApple = hashMapOf<Int, ByteArray>()
     val notifications = hashMapOf<String, ANCSNotification>()
+    val visibleNotifications = arrayListOf<Int>()
 
     val applications = hashMapOf<String, Object>()
 
@@ -36,8 +39,6 @@ class ANCSClient(
             notifUuid
 
         )
-
-//        n.spawnAndroidNotif(context, channel)
 
         notifications.put(Base64.encode(notifUuid), n)
         androidToApple.put(androidNotifId, notifUuid)
@@ -92,8 +93,20 @@ class ANCSClient(
         return when(commandID) {
             CommandID.GetNotificationAttributes -> {
                 Log.i("ANCS", "GetNotificationAttributes")
-                notification?.loadNotificationAttributes(context, attributes)
-                    ?: run { Log.i("ANCS", "Notification $notificationUuid does not exist!"); false }
+                if(notification != null) {
+                    notification.loadNotificationAttributes(context, attributes)
+                    if (visibleNotifications.size >= 20) {
+                        val notifToRemove = visibleNotifications.removeAt(0)
+                        // TODO: Look for edge cases here and handle errors better
+                        androidToApple[notifToRemove]?.let { removeNotif(it) }
+                    }
+                    visibleNotifications.add(notification.androidNotifHandle)
+                    notification.spawnAndroidNotif(context)
+                    true
+                } else {
+                    Log.i("ANCS", "Notification $notificationUuid does not exist!")
+                    false
+                }
             }
 
             CommandID.GetAppAttributes -> {

@@ -1,16 +1,10 @@
 package dev.toastmod.ancs.presentation
 
 import android.Manifest
-import android.app.NotificationChannel
-import android.app.NotificationManager
-import android.bluetooth.BluetoothDevice
-import android.bluetooth.BluetoothManager
-import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Bundle
 import android.os.PowerManager
-import android.os.VibratorManager
-import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.annotation.RequiresPermission
@@ -194,42 +188,7 @@ var wakelock: PowerManager.WakeLock? = null
 class MainActivity : ComponentActivity() {
     private val amsClient = AMSClient()
     private var gattClient: ANCSGattServiceClient? = null
-
-    @RequiresPermission(allOf = [Manifest.permission.VIBRATE, Manifest.permission.BLUETOOTH_CONNECT, Manifest.permission.POST_NOTIFICATIONS])
-    fun startBle() {
-        val vibmgr = getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as VibratorManager
-        val vibrator = vibmgr.defaultVibrator
-
-        val name = "ANCS"
-        val descText = "Apple Notification Center Service"
-        val importance = NotificationManager.IMPORTANCE_DEFAULT
-        val notifMgr = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        val channel = NotificationChannel(NOTIF_CHANNEL_ID, name, importance).apply {
-            description = descText
-        }
-        notifMgr.createNotificationChannel(channel)
-
-        val btManager = baseContext.getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager
-        val btAdapter = btManager.adapter
-        val targetDevice = selectTargetDevice(btAdapter.bondedDevices.toList())
-        if (targetDevice == null) {
-            Log.e("ANCSDiscover", "No bonded Bluetooth device found for ANCS/AMS")
-            return
-        }
-        Log.i("ANCSDiscover", "Connecting to target device: ${targetDevice.alias ?: targetDevice.name ?: targetDevice.address}")
-        val callback = ANCSGattServiceClient(baseContext, channel, vibrator, amsClient)
-        gattClient = callback
-        targetDevice.connectGatt(baseContext, false, callback)
-    }
-
-    private fun selectTargetDevice(devices: List<BluetoothDevice>): BluetoothDevice? {
-        if (devices.isEmpty()) return null
-        val iphone = devices.firstOrNull { device ->
-            val label = "${device.alias ?: ""} ${device.name ?: ""}"
-            label.contains("iphone", ignoreCase = true)
-        }
-        return iphone ?: devices.first()
-    }
+    private var gattService: ANCSAndroidService? = null
 
     @RequiresPermission(allOf = [Manifest.permission.VIBRATE, Manifest.permission.BLUETOOTH_CONNECT, Manifest.permission.POST_NOTIFICATIONS])
     override fun onRequestPermissionsResult(
@@ -239,8 +198,12 @@ class MainActivity : ComponentActivity() {
         deviceId: Int
     ) {
         if (requestCode == 9001 && grantResults.all { it == PackageManager.PERMISSION_GRANTED }) {
-            startBle()
+            val intent =  Intent()
         }
+    }
+
+    fun sendAMSCommand(cmd: Byte) {
+
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -248,9 +211,9 @@ class MainActivity : ComponentActivity() {
         setContent {
             WearApp(
                 amsState = amsClient.state,
-                onTogglePlayPause = { gattClient?.sendAMSCommand(AMSCommand.TOGGLE_PLAY_PAUSE) },
-                onNextTrack = { gattClient?.sendAMSCommand(AMSCommand.NEXT_TRACK) },
-                onPreviousTrack = { gattClient?.sendAMSCommand(AMSCommand.PREVIOUS_TRACK) }
+                onTogglePlayPause = { sendAMSCommand(AMSCommand.TOGGLE_PLAY_PAUSE) },
+                onNextTrack = { sendAMSCommand(AMSCommand.NEXT_TRACK) },
+                onPreviousTrack = { sendAMSCommand(AMSCommand.PREVIOUS_TRACK) }
             )
         }
 
@@ -261,7 +224,10 @@ class MainActivity : ComponentActivity() {
             requestPermissions(arrayOf(Manifest.permission.BLUETOOTH_CONNECT, Manifest.permission.POST_NOTIFICATIONS), 9001)
             return
         }
-        startBle()
+
+        val intent = Intent(this, ANCSAndroidService::class.java)
+        baseContext.startForegroundService(intent)
+
     }
 }
 
