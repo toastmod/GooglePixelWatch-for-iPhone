@@ -76,6 +76,7 @@ class ANCSNotification(val channel: NotificationChannel, val androidNotifHandle:
             .setSmallIcon(R.drawable.ic_launcher_foreground)
             .setContentTitle(title)
             .setContentText(message)
+            .setGroup(appIdent)
             .setPriority(NotificationCompat.PRIORITY_DEFAULT)
             .build()
 
